@@ -1,92 +1,80 @@
-use axum::extract::ws::CloseFrame;
-use axum::Router;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::IntoResponse,
+    response::Response,
     routing::get,
+    Router,
 };
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
-// WebSocketUpgrade: Extractor for establishing WebSocket connections.
-async fn websocket_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    // Finalize upgrading the connection and call the provided callback with the stream.
-    ws.on_failed_upgrade(|error| println!("Error upgrading websocket: {}", error))
-        .on_upgrade(handle_socket)
+// `broadcast` ce channel (`tokio::sync::broadcast`) permet la communication multi-client en temps réel
+// On le met dans ce `state` pour le rendre accessible par n'importe quel handler
+struct AppState {
+    tx: broadcast::Sender<String>,
 }
 
-// WebSocket: A stream of WebSocket messages.
+async fn handle_ws_upgrade(ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(handle_socket)
+}
+
 async fn handle_socket(mut socket: WebSocket) {
-    // Returns `None` if the stream has closed.
     while let Some(msg) = socket.recv().await {
-        if let Ok(msg) = msg {
-            match msg {
-                Message::Text(utf8_bytes) => {
-                    println!("Text received: {}", utf8_bytes);
-                    let result = socket
-                        .send(Message::Text(
-                            format!("Echo back text: {}", utf8_bytes).into(),
-                        ))
-                        .await;
-                    if let Err(error) = result {
-                        println!("Error sending: {}", error);
-                        send_close_message(socket, 1011, &format!("Error occured: {}", error))
-                            .await;
-                        break;
-                    }
-                }
-                Message::Binary(bytes) => {
-                    println!("Received bytes of length: {}", bytes.len());
-                    let result = socket
-                        .send(Message::Text(
-                            format!("Received bytes of length: {}", bytes.len()).into(),
-                        ))
-                        .await;
-                    if let Err(error) = result {
-                        println!("Error sending: {}", error);
-                        send_close_message(socket, 1011, &format!("Error occured: {}", error))
-                            .await;
-                        break;
-                    }
-                }
-                // Close, Ping, Pong will be handled automatically
-                // Message::Close
-                // After receiving a close frame, axum will automatically respond with a close frame if necessary (you do not have to deal with this yourself).
-                // After sending a close frame, you may still read messages, but attempts to send another message will error.
-                // Since no further messages will be received, you may either do nothing or explicitly drop the connection.
-                _ => {}
+        match msg {
+            Ok(Message::Text(t)) => {
+                println!("Received text: {}", t);
+                // Echo message back or broadcast
+                socket
+                    .send(Message::Text(format!("Echo: {}", t).into()))
+                    .await
+                    .unwrap();
             }
-        } else {
-            let error = msg.err().unwrap();
-            println!("Error receiving message: {:?}", error);
-            send_close_message(socket, 1011, &format!("Error occured: {}", error)).await;
-            break;
+            Ok(Message::Binary(b)) => {
+                println!("Received binary: {:?}", b);
+            }
+            Ok(Message::Ping(_)) => {
+                println!("Received ping");
+            }
+            Ok(Message::Close(_)) => {
+                println!("Client disconnected");
+                break; // Exit loop on close
+            }
+            Ok(axum::extract::ws::Message::Pong(_)) => {
+                todo!()
+            }
+            Err(e) => {
+                eprintln!("WebSocket error: {:?}", e);
+                break; // Exit loop on error
+            }
         }
     }
 }
 
-// We MAY “uncleanly” close a WebSocket connection at any time by simply dropping the WebSocket, ie: Break out of the recv loop.
-// However, you may also use the graceful closing protocol, in which
-// peer A sends a close frame, and does not send any further messages;
-// peer B responds with a close frame, and does not send any further messages;
-// peer A processes the remaining messages sent by peer B, before finally
-// both peers close the connection.
-//
-// Close Code: https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index
-async fn send_close_message(mut socket: WebSocket, code: u16, reason: &str) {
-    _ = socket
-        .send(Message::Close(Some(CloseFrame {
-            code: code,
-            reason: reason.into(),
-        })))
-        .await;
+/*
+async fn handle_socket(mut socket: WebSocket) {
+    while let Some(msg) = socket.recv().await {
+        let msg = if let Ok(msg) = msg {
+            msg
+        } else {
+            // client disconnected
+            return;
+        };
+        if socket.send(msg).await.is_err() {
+            // client disconnected
+            return;
+        }
+    }
 }
+*/
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", get(websocket_handler));
+    let (tx, _rx) = broadcast::channel(100); // Le Buffer peut aller jusqu'à 100 messages
+    let app_state = Arc::new(AppState { tx });
+    let app = Router::new()
+        .route("/ws", get(handle_ws_upgrade))
+        .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-
-    axum::serve(listener, app).await?;
-
-    Ok(());
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    println!("Listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
 }
