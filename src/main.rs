@@ -17,6 +17,10 @@ async fn handle_ws_upgrade(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 
+async fn home() {
+    println!("Page d'accueil");
+}
+
 async fn handle_socket(mut socket: WebSocket) {
     while let Some(msg) = socket.recv().await {
         match msg {
@@ -49,29 +53,13 @@ async fn handle_socket(mut socket: WebSocket) {
     }
 }
 
-/*
-async fn handle_socket(mut socket: WebSocket) {
-    while let Some(msg) = socket.recv().await {
-        let msg = if let Ok(msg) = msg {
-            msg
-        } else {
-            // client disconnected
-            return;
-        };
-        if socket.send(msg).await.is_err() {
-            // client disconnected
-            return;
-        }
-    }
-}
-*/
-
 #[tokio::main]
 async fn main() {
     let (tx, _rx) = broadcast::channel(100); // Le Buffer peut aller jusqu'à 100 messages
     let app_state = Arc::new(AppState { tx });
     let app = Router::new()
         .route("/ws", get(handle_ws_upgrade))
+        .route("/", get(home))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
