@@ -2,10 +2,22 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::Response,
     routing::get,
-    Router,
+    Json, Router,
 };
+use rand::{distr::Alphanumeric, prelude::*};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+
+fn get_rand_string() -> String {
+    let s: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(3)
+        .map(char::from)
+        .collect();
+    println!("{}", s);
+
+    s
+}
 
 // `broadcast` ce channel (`tokio::sync::broadcast`) permet la communication multi-client en temps réel
 // On le met dans ce `state` pour le rendre accessible par n'importe quel handler
@@ -17,8 +29,8 @@ async fn handle_ws_upgrade(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 
-async fn home() {
-    println!("Page d'accueil");
+async fn home() -> String {
+    get_rand_string()
 }
 
 async fn handle_socket(mut socket: WebSocket) {
