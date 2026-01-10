@@ -2,12 +2,13 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::Response,
     routing::get,
-    Json, Router,
+    Router,
 };
 use rand::{distr::Alphanumeric, prelude::*};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+// Génération de l'id
 fn get_rand_string() -> String {
     let s: String = rand::rng()
         .sample_iter(&Alphanumeric)
@@ -15,7 +16,6 @@ fn get_rand_string() -> String {
         .map(char::from)
         .collect();
     println!("{}", s);
-
     s
 }
 
@@ -25,14 +25,21 @@ struct AppState {
     tx: broadcast::Sender<String>,
 }
 
+// Page d'accueil
+async fn home() -> String {
+    // Idée :
+    // Quand on GET le endpoint on "POST" l'id
+    // Requete + reponse :
+    // Requete du enpoint qui demande l'id -> response qui donne l'id
+    get_rand_string()
+}
+
+// Handler websocket
 async fn handle_ws_upgrade(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 
-async fn home() -> String {
-    get_rand_string()
-}
-
+// Logique socket
 async fn handle_socket(mut socket: WebSocket) {
     while let Some(msg) = socket.recv().await {
         match msg {
@@ -71,7 +78,7 @@ async fn main() {
     let app_state = Arc::new(AppState { tx });
     let app = Router::new()
         .route("/ws", get(handle_ws_upgrade))
-        .route("/", get(home))
+        .route("/{id}", get(home))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
