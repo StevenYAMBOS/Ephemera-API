@@ -44,7 +44,7 @@ async fn handle_socket(mut socket: WebSocket) {
     while let Some(msg) = socket.recv().await {
         match msg {
             Ok(Message::Text(t)) => {
-                println!("Received text: {}", t);
+                println!("Texte reçu : {}", t);
                 // Echo message back or broadcast
                 socket
                     .send(Message::Text(format!("Echo: {}", t).into()))
@@ -52,20 +52,20 @@ async fn handle_socket(mut socket: WebSocket) {
                     .unwrap();
             }
             Ok(Message::Binary(b)) => {
-                println!("Received binary: {:?}", b);
+                println!("Binaire reçu : {:?}", b);
             }
             Ok(Message::Ping(_)) => {
-                println!("Received ping");
+                println!("Ping reçu ! ");
             }
             Ok(Message::Close(_)) => {
-                println!("Client disconnected");
+                println!("Le client est déconnecté");
                 break; // Exit loop on close
             }
             Ok(axum::extract::ws::Message::Pong(_)) => {
                 todo!()
             }
             Err(e) => {
-                eprintln!("WebSocket error: {:?}", e);
+                eprintln!("Erreur websocket : {:?}", e);
                 break; // Exit loop on error
             }
         }
@@ -82,6 +82,9 @@ async fn main() {
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("Listening on {}", listener.local_addr().unwrap());
+    println!(
+        "Le serveur est lançé sur {}",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, app).await.unwrap();
 }
